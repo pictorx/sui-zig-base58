@@ -2,6 +2,8 @@
 
 Base58 encoding and decoding library for Zig, following the Bitcoin alphabet (`123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`).
 
+NOTE: I'm learning Zig with this small lib.
+
 ## Requirements
 
 Zig `0.16.0` or newer.
