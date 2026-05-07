@@ -1,5 +1,6 @@
 //! By convention, root.zig is the root source file when making a package.
 const std = @import("std");
+const simd = std.simd;
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
 
@@ -48,10 +49,10 @@ fn _encode(allocator: Allocator, src: []const u8) ![]u8 {
     var zero_cnt: usize = 0;
     while (zero_cnt < src.len and src[zero_cnt] == 0) : (zero_cnt += 1) {}
 
-    const padding_len = encoded_len(src.len - zero_cnt);
-    var padding: []u8 = try allocator.alloc(u8, padding_len);
-    defer allocator.free(padding);
-    @memset(padding, 0);
+    const intermediate_len = encoded_len(src.len - zero_cnt);
+    var intermediate: []u8 = try allocator.alloc(u8, intermediate_len);
+    defer allocator.free(intermediate);
+    @memset(intermediate, 0);
 
     var high: usize = 0;
 
@@ -60,8 +61,8 @@ fn _encode(allocator: Allocator, src: []const u8) ![]u8 {
         var i: usize = 0;
 
         while (i < high or carry > 0) {
-            const current = carry + @as(u32, padding[i]) * 256;
-            padding[i] = @intCast(current % 58);
+            const current = carry + @as(u32, intermediate[i]) * 256;
+            intermediate[i] = @intCast(current % 58);
             carry = current / 58;
             i += 1;
         }
@@ -74,7 +75,7 @@ fn _encode(allocator: Allocator, src: []const u8) ![]u8 {
     @memset(out[0..zero_cnt], '1');
 
     for (0..high) |i| {
-        out[zero_cnt + i] = Alphabet[padding[high - 1 - i]];
+        out[zero_cnt + i] = Alphabet[intermediate[high - 1 - i]];
     }
 
     return out;
@@ -86,10 +87,10 @@ fn _decode(allocator: Allocator, src: []const u8) ![]u8 {
     var zero_cnt: usize = 0;
     while (zero_cnt < src.len and src[zero_cnt] == '1') : (zero_cnt += 1) {}
 
-    const raw_bytes_len = decoded_len(src.len - zero_cnt);
-    var raw_bytes: []u8 = try allocator.alloc(u8, raw_bytes_len);
-    defer allocator.free(raw_bytes);
-    @memset(raw_bytes, 0);
+    const intermediate_len = decoded_len(src.len - zero_cnt);
+    var intermediate: []u8 = try allocator.alloc(u8, intermediate_len);
+    defer allocator.free(intermediate);
+    @memset(intermediate, 0);
 
     var high: usize = 0;
 
@@ -101,10 +102,10 @@ fn _decode(allocator: Allocator, src: []const u8) ![]u8 {
         var i: usize = 0;
 
         while (i < high or carry > 0) {
-            if (i >= raw_bytes.len) return Base58Error.Decode;
+            if (i >= intermediate.len) return Base58Error.Decode;
 
-            const current = carry + (@as(u32, raw_bytes[i]) * 58);
-            raw_bytes[i] = @intCast(current % 256);
+            const current = carry + (@as(u32, intermediate[i]) * 58);
+            intermediate[i] = @intCast(current % 256);
             carry = current / 256;
             i += 1;
         }
@@ -116,7 +117,7 @@ fn _decode(allocator: Allocator, src: []const u8) ![]u8 {
     @memset(out[0..zero_cnt], 0);
 
     for (0..high) |i| {
-        out[zero_cnt + i] = raw_bytes[high - 1 - i];
+        out[zero_cnt + i] = intermediate[high - 1 - i];
     }
 
     return out;
