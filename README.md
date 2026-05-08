@@ -59,3 +59,8 @@ pub const Base58Error = error{ Decode, InvalidCharacter, NoSpaceLeft };
 ```bash
 zig build test
 ```
+
+## Documentation
+
+- [Encoding](docs/encoding.md) — how the encode algorithm works
+- [Decoding](docs/decoding.md) — how the decode algorithm works
