@@ -92,6 +92,8 @@ zig build test
 
 ## Benchmarks
 
+Benchmark source: [Gealber/benchs-base58](https://github.com/Gealber/benchs-base58).
+
 Compared against [Syndica/base58-zig](https://github.com/Syndica/base58-zig) (used by the [Syndica/sig](https://github.com/Syndica/sig) Solana validator) and [firedancer-io/firedancer](https://github.com/firedancer-io/firedancer/tree/main/src/ballet/base58) (Jump Crypto's AVX2-optimized C implementation). Benchmarks run with [hendriknielaender/zBench](https://github.com/hendriknielaender/zBench).
 
 **Summary (avg time/run, ReleaseFast, AVX2):**
