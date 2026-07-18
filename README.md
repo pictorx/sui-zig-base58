@@ -11,7 +11,7 @@ Zig `0.16.0` or newer.
 ## Installation
 
 ```bash
-zig fetch --save git+https://github.com/you/base58#main
+zig fetch --save git+https://github.com/pictorx/zig-base58.git#main
 ```
 
 In your `build.zig`:
@@ -25,31 +25,16 @@ exe.root_module.addImport("base58", base58_dep.module("base58"));
 
 The caller provides the destination buffer. No allocator required.
 
-For 32-byte pubkeys and 64-byte signatures, use the typed fast paths (`encode32`/`decode32`, `encode64`/`decode64`). The generic `encode`/`decode` handle arbitrary lengths but are slower (O(n²)).
+32-byte signatures, use the typed fast paths (`encode32`/`decode32`). 
 
 ```zig
 const base58 = @import("base58");
 
-// Fast path — 32-byte pubkey
 var enc_buf: [base58.encodedMaxLen(32)]u8 = undefined;
 const encoded = try base58.encode32(&enc_buf, pubkey_bytes);
 
 var dec_buf: [32]u8 = undefined;
 const decoded = try base58.decode32(&dec_buf, encoded);
-
-// Fast path — 64-byte signature
-var enc_buf: [base58.encodedMaxLen(64)]u8 = undefined;
-const encoded = try base58.encode64(&enc_buf, sig_bytes);
-
-var dec_buf: [64]u8 = undefined;
-const decoded = try base58.decode64(&dec_buf, encoded);
-
-// Generic — arbitrary length
-var enc_buf: [base58.encodedLen(src.len)]u8 = undefined;
-const encoded = try base58.encode(&enc_buf, src);
-
-var dec_buf: [src.len]u8 = undefined;
-const decoded = try base58.decode(&dec_buf, encoded);
 ```
 
 All functions write into the caller-supplied buffer and return a slice of it.
@@ -59,22 +44,10 @@ All functions write into the caller-supplied buffer and return a slice of it.
 ```zig
 // Fast paths (SIMD-optimized, AVX2)
 pub fn encode32(dst: []u8, src: [32]u8) ![]u8
-pub fn encode64(dst: []u8, src: [64]u8) ![]u8
 pub fn decode32(dst: []u8, src: []const u8) ![]u8
-pub fn decode64(dst: []u8, src: []const u8) ![]u8
 
-// Generic (arbitrary length, O(n²))
-pub fn encode(dst: []u8, src: []const u8) ![]u8
-pub fn decode(dst: []u8, src: []const u8) ![]u8
-
-/// Exact dst size for encode32/encode64.
+/// Exact dst size for encode32.
 pub fn encodedMaxLen(comptime src_len: usize) usize
-
-/// Minimum dst size for generic encode.
-pub fn encodedLen(src_len: usize) usize
-
-/// Minimum dst size for generic decode.
-pub fn decodedLen(src_len: usize) usize
 
 pub const Base58Error = error{ Decode, InvalidCharacter, NoSpaceLeft };
 ```
