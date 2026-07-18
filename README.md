@@ -11,7 +11,7 @@ Zig `0.16.0` or newer.
 ## Installation
 
 ```bash
-zig fetch --save git+https://github.com/pictorx/zig-base58.git#main
+zig fetch --save git+https://github.com/pictorx/sui-zig-base58.git#main
 ```
 
 In your `build.zig`:

@@ -94,7 +94,6 @@ pub fn decodedLen(src_len: usize) usize {
 pub fn encode(dst: []u8, src: []const u8) ![]u8 {
     return switch (src.len) {
         32 => encode32(dst, src[0..32].*),
-        64 => encode64(dst, src[0..64].*),
         else => _encode(dst, src),
     };
 }
@@ -230,38 +229,6 @@ fn limbsToIntermediate32(limbs: [8]u32) [9]u64 {
     return intermediate;
 }
 
-fn limbsToIntermediate64(limbs: [16]u32) [18]u64 {
-    var intermediate: [18]u64 = .{0} ** 18;
-
-    for (0..8) |i| {
-        const limb: @Vector(17, u64) = @splat(@as(u64, limbs[i]));
-        var table_row: @Vector(17, u64) = undefined;
-        inline for (0..17) |j| table_row[j] = enc_table_64[i][j];
-        const acc: @Vector(17, u64) = @bitCast(intermediate[1..18].*);
-        intermediate[1..18].* = @bitCast(acc + limb * table_row);
-    }
-
-    // mini-reduction to prevent intermediate[16] overflow
-    intermediate[15] += intermediate[16] / intermediate_base;
-    intermediate[16] %= intermediate_base;
-
-    for (8..16) |i| {
-        const limb: @Vector(17, u64) = @splat(@as(u64, limbs[i]));
-        var table_row: @Vector(17, u64) = undefined;
-        inline for (0..17) |j| table_row[j] = enc_table_64[i][j];
-        const acc: @Vector(17, u64) = @bitCast(intermediate[1..18].*);
-        intermediate[1..18].* = @bitCast(acc + limb * table_row);
-    }
-
-    var k: usize = 17;
-    while (k > 0) : (k -= 1) {
-        intermediate[k - 1] += intermediate[k] / intermediate_base;
-        intermediate[k] %= intermediate_base;
-    }
-
-    return intermediate;
-}
-
 inline fn intermediateToRaw(comptime N: usize, intermediate: [intermediateSize(N)]u64) [intermediateSize(N) * 5]u8 {
     const inter_sz = comptime intermediateSize(N);
     const VecType = @Vector(inter_sz, u32);
@@ -326,18 +293,6 @@ fn encode32(dst: []u8, src: [32]u8) ![]u8 {
 
     const in_leading_zero: usize = countLeadingZeros(32, src);
     return rawToBase58(32, in_leading_zero, raw, dst);
-}
-
-fn encode64(dst: []u8, src: [64]u8) ![]u8 {
-    const max_out_sz = intermediateSize(64) * 5;
-    if (dst.len < max_out_sz) return Base58Error.NoSpaceLeft;
-
-    const limbs = signatureLimbs(src);
-    const intermediate = limbsToIntermediate64(limbs);
-    const raw = intermediateToRaw(64, intermediate);
-
-    const in_leading_zero: usize = countLeadingZeros(64, src);
-    return rawToBase58(64, in_leading_zero, raw, dst);
 }
 
 fn countLeadingOnes(src: []const u8) usize {
@@ -425,34 +380,6 @@ fn intermediateToLimbs32(intermediate: [9]u64) ![8]u32 {
     return limbs;
 }
 
-// Mirrors intermediateToLimbs32 for the 64-byte (signature) case.
-//
-// Same u64 bound applies. The tightest column (13) reaches at most ~2^63.998
-// — fits in u64 with no overflow. Verified by Firedancer.
-fn intermediateToLimbs64(intermediate: [18]u64) ![16]u32 {
-    var binary: [16]u64 = .{0} ** 16;
-
-    for (0..18) |j| {
-        const limb: @Vector(16, u64) = @splat(intermediate[j]);
-        var table_row: @Vector(16, u64) = undefined;
-        inline for (0..16) |k| table_row[k] = dec_table_64[j][k];
-        const acc: @Vector(16, u64) = @bitCast(binary);
-        binary = @bitCast(acc + limb * table_row);
-    }
-
-    var k: usize = 15;
-    while (k > 0) : (k -= 1) {
-        binary[k - 1] += binary[k] >> 32;
-        binary[k] &= 0xFFFF_FFFF;
-    }
-
-    if (binary[0] >> 32 != 0) return Base58Error.Decode;
-
-    var limbs: [16]u32 = undefined;
-    for (0..16) |i| limbs[i] = @intCast(binary[i]);
-    return limbs;
-}
-
 pub fn decode32(dst: []u8, src: []const u8) ![]u8 {
     if (dst.len < 32) return Base58Error.NoSpaceLeft;
 
@@ -469,31 +396,10 @@ pub fn decode32(dst: []u8, src: []const u8) ![]u8 {
     return dst[0..32];
 }
 
-pub fn decode64(dst: []u8, src: []const u8) ![]u8 {
-    if (dst.len < 64) return Base58Error.NoSpaceLeft;
-
-    const in_leading_ones = countLeadingOnes(src);
-    const raw = try base58ToRaw(64, in_leading_ones, src);
-    const intermediate = rawToIntermediate(64, raw);
-    const limbs = try intermediateToLimbs64(intermediate);
-    const bytes: [64]u8 = @bitCast(@byteSwap(@as(@Vector(16, u32), @bitCast(limbs))));
-
-    if (countLeadingZeros(64, bytes) != in_leading_ones) return Base58Error.Decode;
-
-    dst[0..64].* = bytes;
-    return dst[0..64];
-}
-
 test "countLeadingZeros 32" {
     try testing.expectEqual(@as(usize, 32), countLeadingZeros(32, [_]u8{0} ** 32));
     try testing.expectEqual(@as(usize, 0), countLeadingZeros(32, [_]u8{1} ++ [_]u8{0} ** 31));
     try testing.expectEqual(@as(usize, 3), countLeadingZeros(32, [_]u8{0} ** 3 ++ [_]u8{1} ++ [_]u8{0} ** 28));
-}
-
-test "countLeadingZeros 64" {
-    try testing.expectEqual(@as(usize, 64), countLeadingZeros(64, [_]u8{0} ** 64));
-    try testing.expectEqual(@as(usize, 0), countLeadingZeros(64, [_]u8{1} ++ [_]u8{0} ** 63));
-    try testing.expectEqual(@as(usize, 5), countLeadingZeros(64, [_]u8{0} ** 5 ++ [_]u8{1} ++ [_]u8{0} ** 58));
 }
 
 test "pubkey, signature to limbs" {
@@ -517,14 +423,6 @@ test "pubkey, _encode32" {
     var out: [encodedMaxLen(32)]u8 = undefined;
     const result = try encode32(&out, pk);
     const expected = "11111111111111111111111111111111";
-    try testing.expectEqualStrings(expected, result);
-}
-
-test "null signature, _encode64" {
-    const sig = [_]u8{0} ** 64;
-    var out: [encodedMaxLen(64)]u8 = undefined;
-    const result = try encode64(&out, sig);
-    const expected = "1" ** 64;
     try testing.expectEqualStrings(expected, result);
 }
 
@@ -660,12 +558,6 @@ test "decode32, null pubkey" {
     try testing.expectEqualSlices(u8, &(.{0} ** 32), result);
 }
 
-test "decode64, null signature" {
-    var out: [64]u8 = undefined;
-    const result = try decode64(&out, "1" ** 64);
-    try testing.expectEqualSlices(u8, &(.{0} ** 64), result);
-}
-
 test "decode32 round-trip" {
     const pk = [32]u8{
         1,  2,  3,  4,  5,  6,  7,  8,
@@ -678,20 +570,6 @@ test "decode32 round-trip" {
     const encoded = try encode32(&enc_buf, pk);
     const decoded = try decode32(&dec_buf, encoded);
     try testing.expectEqualSlices(u8, &pk, decoded);
-}
-
-test "decode64 round-trip" {
-    const sig = [64]u8{
-        1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
-        17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
-        33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
-        49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64,
-    };
-    var enc_buf: [encodedMaxLen(64)]u8 = undefined;
-    var dec_buf: [64]u8 = undefined;
-    const encoded = try encode64(&enc_buf, sig);
-    const decoded = try decode64(&dec_buf, encoded);
-    try testing.expectEqualSlices(u8, &sig, decoded);
 }
 
 test "decode32 round-trip, leading zero bytes" {
@@ -759,26 +637,6 @@ test "fuzz encode32/decode32 round-trip" {
         .corpus = &.{
             &([_]u8{0} ** 32), // null pubkey
             &([_]u8{0xFF} ** 32), // max pubkey
-        },
-    });
-}
-
-fn fuzzEncode64Decode64(_: void, smith: *std.testing.Smith) !void {
-    var src: [64]u8 = undefined;
-    smith.bytes(&src);
-    var enc_buf: [encodedMaxLen(64)]u8 = undefined;
-    const encoded = try encode64(&enc_buf, src);
-    var dec_buf: [64]u8 = undefined;
-    const decoded = try decode64(&dec_buf, encoded);
-    try testing.expectEqualSlices(u8, &src, decoded);
-}
-
-// Round-trip through the encode64/decode64 fast path for arbitrary 64-byte inputs.
-test "fuzz encode64/decode64 round-trip" {
-    try std.testing.fuzz({}, fuzzEncode64Decode64, .{
-        .corpus = &.{
-            &([_]u8{0} ** 64), // null signature
-            &([_]u8{0xFF} ** 64), // max signature
         },
     });
 }
